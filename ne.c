@@ -179,8 +179,7 @@ void saveFile(){
     }
 
     close(fd);
-
-    pthread_mutex_lock(&mutex);
+    pthread_mutex_unlock(&mutex);
 }
 
 //기존의 파일을 append모드로 열어서 뒤에서부터 수정할 수 있도록 하는 함수
@@ -253,7 +252,6 @@ void notification(char* message){
 void printScreen(){
     pthread_mutex_lock(&mutex);
     int screen_i = 0;
-    int in_comment = 0;
     for(int buffer_i = first; buffer_i < first + rows; buffer_i++){
         move(screen_i, 0);
         clrtoeol();
@@ -263,6 +261,7 @@ void printScreen(){
         int in_string = 0, in_comment = 0;
         int x = 0;
 
+        // " "안에 있는 문장 처리
         for(int j=0; j<len;){
             if(line[j] ==  '"' && !in_comment){
                 attron(COLOR_PAIR(2));
