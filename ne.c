@@ -23,7 +23,7 @@
 
 //입력한 문자를 담을 버퍼
 char buffer[MAX_LINES][MAX_LINE_LEN];
-
+//test push
 //라인 버퍼의 현재 위치를 알려주는 변수
 int i = 0;
 int j = 0;
