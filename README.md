@@ -40,18 +40,19 @@
    git clone https://github.com/yourusername/your-repo-name.git
 
 2. **필요한 라이브러리 설치**
-이 프로젝트는 ncurses 및 pthread 라이브러리를 사용합니다. 이를 설치하기 위해 아래 명령어를 실행하세요.
+이 프로젝트는 ncurses 및 pthread 라이브러리를 사용합니다.
+이를 설치하기 위해 아래 명령어를 실행하세요.
    ```bash
    sudo apt-get update
    sudo apt-get install libncurses5-dev libpthread-stubs0-dev
    
-3. **빌드 및 컴파일**
+4. **빌드 및 컴파일**
    소스 코드가 준비되면, Makefile을 사용하여 프로젝트를 빌드합니다.
 
    ```bash
    cd your-repo-name
    make
 
-4. **프로그램 실행**
+5. **프로그램 실행**
    ```bash
    ./your_program
