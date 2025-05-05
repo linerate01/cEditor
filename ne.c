@@ -16,6 +16,7 @@
 #include <curses.h>
 #include <dirent.h>
 #include <sys/types.h>
+#include <pthread.h>
 
 //버퍼의 크기(필요에 따라 크기를 늘리거나 줄일 예정정)
 #define MAX_LINE_LEN 100
@@ -23,7 +24,7 @@
 
 //입력한 문자를 담을 버퍼
 char buffer[MAX_LINES][MAX_LINE_LEN];
-//test push
+
 //라인 버퍼의 현재 위치를 알려주는 변수
 int i = 0;
 int j = 0;
@@ -61,6 +62,16 @@ void checkDown();
 //화면의 크기가 변경될 경우 그에 맞춰서 스케일링 해주는 함수
 void setWinSize();
 
+void* saveFileThread(void*);
+void autoSaveHandler();
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
+const char* dataType[] = {"int", "unsigned", "signed", "double", "float",
+"char", "short", "long", "void"};
+const char* etc[] = {"sizeof", "typedef", "struct", "union", "enum", "extern", "static", "const"};
+const char* memoryKeyword[] = {"malloc", "free", "calloc", "realloc"};
+const char* controlKeyword[] = {"if", "else", "switch", "case", "default", "while", "for", "do", "continue", "break", "return"};
+
 //프로그램 시작시 기본 설정 세팅
 void initProgram(){
     initscr();
@@ -70,7 +81,20 @@ void initProgram(){
     raw(); //이것도 특수키 처리를 위한 세팅
     getmaxyx(stdscr, rows, cols); //init시에 화면의 크기를 가져옴
     signal(SIGWINCH, setWinSize); //화면 크기 변화에 따른 signal세팅
+    signal(SIGALRM, autoSaveHandler);
+    alarm(5);
     mousemask(BUTTON1_PRESSED | BUTTON2_PRESSED, NULL); //마우스 클릭 이벤트 설정
+}
+
+void autoSaveHandler() {
+    pthread_t t;
+    
+    if (pthread_create(&t, NULL, saveFileThread, NULL) != 0) 
+        perror("can't create thread for autosave");
+    else
+        pthread_detach(t);
+
+    alarm(5);
 }
 
 //현재 화면 사이즈를 조절했을 때, [A 같은 이상한 값이 버퍼에 들어가는 버그가 있음(해결 요망)
@@ -90,13 +114,45 @@ void setWinSize() {
 	printScreen();
 }
 
+void* saveFileThread(void* arg) {
+    //이건 과제에서 저장하는 부분만 떼 온 것.
+    int fd, count = 0;
+    
+    pthread_mutex_lock(&mutex);
+    if((fd = creat(currentFileName, 0644)) == -1){
+        perror("create error!");
+        pthread_mutex_unlock(&mutex);
+        pthread_exit(NULL);
+    }
+
+    while(count <= totalLines){
+        //버퍼에서 한 줄식 뒤에 '\n'을 붙여서 파일에 저장
+        copiedStr[0] = '\0';
+        strcpy(copiedStr, buffer[count]);
+        strcat(copiedStr, "\n\0");
+
+        if(write(fd, copiedStr, strlen(copiedStr)) != strlen(copiedStr)){
+            perror("wirte error!");
+            pthread_mutex_unlock(&mutex);
+            pthread_exit(NULL);
+        }
+        count++;
+    }
+    close(fd);
+
+    pthread_mutex_unlock(&mutex);
+    return NULL;
+}
+
 //현재 작성중인 파일을 저장하는 함수
 void saveFile(){
     //이건 과제에서 저장하는 부분만 떼 온 것.
     int fd, count = 0;
-
+    
+    pthread_mutex_lock(&mutex);
     if((fd = creat(currentFileName, 0644)) == -1){
         perror("create error!");
+        pthread_mutex_unlock(&mutex);
         exit(1);
     }
 
@@ -108,19 +164,23 @@ void saveFile(){
 
         if(write(fd, copiedStr, strlen(copiedStr)) != strlen(copiedStr)){
             perror("wirte error!");
+            pthread_mutex_unlock(&mutex);
             exit(1);
         }
         count++;
     }
 
     close(fd);
+
+    pthread_mutex_lock(&mutex);
 }
 
 //기존의 파일을 append모드로 열어서 뒤에서부터 수정할 수 있도록 하는 함수
 void newFileOpen(char* filePath) {
+    pthread_mutex_lock(&mutex);
     int idx = 0;
     int cur_row = 0;
-
+    
 	int fd = open(filePath, O_RDONLY);
 	if (fd == -1) {
 	    perror(filePath);
@@ -146,6 +206,7 @@ void newFileOpen(char* filePath) {
 
     totalLines = cur_row - 1;
     close(fd);
+    pthread_mutex_unlock(&mutex);
 }
 
 //Ctrl + Z 로 되돌리는 기능
@@ -155,18 +216,24 @@ void backward(){
 
 //Ctrl + C 로 복사하는 기능
 void copy(){
+    pthread_mutex_lock(&mutex);
 	strcpy(copiedStr, buffer[i]);
+    pthread_mutex_unlock(&mutex);
 }
 
 //Ctrl + V 로 붙이는 기능
 void paste() {
+    pthread_mutex_lock(&mutex);
+
 	strcpy(buffer[i], copiedStr);
 	printScreen();
+
+    pthread_mutex_unlock(&mutex);
 }
 
 //Ctrl + J 로 원하는 줄로 jump하는 기능
 void jump() {
-
+    
 }
 
 //동작의 성공, 오류, 특별한 알림을 출력하는 함수
@@ -176,6 +243,7 @@ void notification(char* message){
 
 //문자의 입력, 지움, 줄바꿈 마다 그 업데이트된 내용을 출력
 void printScreen(){
+    pthread_mutex_lock(&mutex);
     int screen_i = 0;
     for(int buffer_i = first; buffer_i < first + rows; buffer_i++){
         move(screen_i, 0);
@@ -185,6 +253,7 @@ void printScreen(){
     }
     move(cursor_i, j);
     refresh();
+    pthread_mutex_unlock(&mutex);
 }
 
 //현재의 buffer의 인덱스와 first를 비교해서 정확한 커서위치를 찾아주는 함수
@@ -226,7 +295,7 @@ void input(){
 		else if (ch == 26)
 			backward();
 
-
+        pthread_mutex_lock(&mutex);
         //<방향키로 커서 조작하는 부분>
         if(ch == KEY_LEFT){
             if(j > 0){
@@ -332,7 +401,7 @@ void input(){
                 buffer[i][j++] = ch;
             }
         }
-
+        pthread_mutex_unlock(&mutex);
         //printScreen();
     }
 }
@@ -346,7 +415,7 @@ void exitProgram(){
 
 int main(int argc, char* argv[]) {
 	if (argc < 2) {
-        fprintf(stderr, "please command ./ne [filename]");
+        fprintf(stderr, "please command ./ne [filename]\n");
         exit(1);
     } else {
         DIR *dir_ptr;
@@ -365,6 +434,8 @@ int main(int argc, char* argv[]) {
     initProgram();
     input();
     exitProgram();
+    pthread_mutex_destroy(&mutex);
 
     return 0;
 }
+
