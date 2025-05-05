@@ -1,12 +1,3 @@
-/*
-<수정사항 1.3>
-- 한 글자만 있는 라인에서, 백스페이스 입력시 지워지지 않던 버그 해결
-- 화면 크기 변화시 cursor_i가 화면 바깥 쪽 아래에 박혀서 올라오지 않던 버그 해결
-  근데 화면 크기 바꿀때마다 getch에 이상한 값이 저장되는 버그가 있음.
-- 마우스 클릭시 그 클릭한 위치로 커서를 옮기는 기능 추가 
-- ()나 {}, "", '' 같이 한 쪽만 입력해도 2개가 동시에 입력되는 기능을 추가
-*/
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
@@ -14,9 +5,11 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <curses.h>
+#include <ncurses.h>
 #include <dirent.h>
 #include <sys/types.h>
 #include <pthread.h>
+#include <ctype.h>
 
 //버퍼의 크기(필요에 따라 크기를 늘리거나 줄일 예정정)
 #define MAX_LINE_LEN 100
@@ -62,6 +55,10 @@ void checkDown();
 //화면의 크기가 변경될 경우 그에 맞춰서 스케일링 해주는 함수
 void setWinSize();
 
+int is_cyan_keyword(const char* word); // 하이라이팅 색깔 시안으로 지정된 단어인지 검사하는 함수
+int is_magenta_keyword(const char* word); // 하이라이팅 색깔 마젠타로 지정된 단어인지 검사하는 함수
+
+
 void* saveFileThread(void*);
 void autoSaveHandler();
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -72,6 +69,9 @@ const char* etc[] = {"sizeof", "typedef", "struct", "union", "enum", "extern", "
 const char* memoryKeyword[] = {"malloc", "free", "calloc", "realloc"};
 const char* controlKeyword[] = {"if", "else", "switch", "case", "default", "while", "for", "do", "continue", "break", "return"};
 
+const char* cyan_keyword[] = {"int", "double", "float", "enum", "char", "short", "long", "malloc", "free", "calloc", "realloc"};
+const char* magenta_keyword[] = {"void", "unsigned", "signed", "sizeof", "typedef", "struct", "union", "extern", "static", "const", "if", "else", "switch", "case", "default", "while", "for", "do", "continue", "break","return"};
+
 //프로그램 시작시 기본 설정 세팅
 void initProgram(){
     initscr();
@@ -80,6 +80,15 @@ void initProgram(){
     keypad(stdscr, TRUE); //Ctrl + q 같은 특수키 처리를 위한 세팅
     raw(); //이것도 특수키 처리를 위한 세팅
     getmaxyx(stdscr, rows, cols); //init시에 화면의 크기를 가져옴
+
+    start_color();
+    use_default_colors();
+    init_pair(1, COLOR_CYAN, -1);
+    init_pair(2, COLOR_YELLOW, -1);
+    init_pair(3, COLOR_GREEN, -1);
+    init_pair(4, COLOR_RED, -1);
+    init_pair(5, COLOR_MAGENTA, -1);
+
     signal(SIGWINCH, setWinSize); //화면 크기 변화에 따른 signal세팅
     signal(SIGALRM, autoSaveHandler);
     alarm(5);
@@ -139,7 +148,6 @@ void* saveFileThread(void* arg) {
         count++;
     }
     close(fd);
-
     pthread_mutex_unlock(&mutex);
     return NULL;
 }
@@ -245,15 +253,109 @@ void notification(char* message){
 void printScreen(){
     pthread_mutex_lock(&mutex);
     int screen_i = 0;
+    int in_comment = 0;
     for(int buffer_i = first; buffer_i < first + rows; buffer_i++){
         move(screen_i, 0);
         clrtoeol();
-        addstr(buffer[buffer_i]);
+
+        const char *line = buffer[buffer_i];
+        int len = strlen(line);
+        int in_string = 0, in_comment = 0;
+        int x = 0;
+
+        for(int j=0; j<len;){
+            if(line[j] ==  '"' && !in_comment){
+                attron(COLOR_PAIR(2));
+                mvaddch(screen_i, x++, line[j++]);
+                while(j < len){
+                    mvaddch(screen_i, x++, line[j]);
+                    if(line[j] == '"' && line[j-1] != '\\'){
+                        j++;
+                        break;
+                    }
+                    j++;
+                }
+                attroff(COLOR_PAIR(2));
+                continue;
+            }
+            
+            // 한줄주석 (//...) 처리
+            if(!in_string && !in_comment && j+1 < len && line[j] == '/' && line[j+1]== '/'){
+                attron(COLOR_PAIR(3));
+                while(j < len){
+                    mvaddch(screen_i, x++, line[j++]);
+                }
+                attroff(COLOR_PAIR(3));
+                break;
+            }
+            
+            // 전처리기 강조
+            if(j==0 && line[j] == '#'){
+                attron(COLOR_PAIR(2));
+                while(j < len){
+                    mvaddch(screen_i, x++, line[j++]);
+                }
+                attroff(COLOR_PAIR(2));
+                break;
+            }
+            
+            //세미콜론 강조
+            if(line[j] == ';'){
+                attron(COLOR_PAIR(4));
+                mvaddch(screen_i, x++, line[j++]);
+                attroff(COLOR_PAIR(4));
+                continue;
+            }
+
+            //키워드 강조
+            if(isalpha(line[j]) || line[j] == '_'){
+                char word[64] = {0};
+                int k = 0;
+                while((isalnum(line[j]) || line[j] =='_') && k < 63) {
+                    word[k++] = line[j++];
+                }
+                word[k] = '\0';
+                
+                // CYAN 키워드 강조
+                if(is_cyan_keyword(word)){
+                    attron(COLOR_PAIR(1));
+                    mvprintw(screen_i, x, "%s", word);
+                    attroff(COLOR_PAIR(1));
+                }
+                // MAGENTA 키워드 강조
+                else if(is_magenta_keyword(word)){
+                    attron(COLOR_PAIR(5));
+                    mvprintw(screen_i, x, "%s", word);
+                    attroff(COLOR_PAIR(5));
+                }else{
+                    mvprintw(screen_i, x, "%s", word);
+                }
+
+                x += strlen(word);
+                continue;
+            }
+
+            mvaddch(screen_i, x++, line[j++]);
+        }
         screen_i++;
     }
     move(cursor_i, j);
     refresh();
     pthread_mutex_unlock(&mutex);
+}
+
+int is_cyan_keyword(const char* word){
+    for(int i=0; cyan_keyword[i] != NULL; i++){
+        if(strcmp(word, cyan_keyword[i]) == 0) return 1;
+    }
+    return 0;
+}
+
+int is_magenta_keyword(const char* word){
+    for(int i=0; magenta_keyword[i] != NULL; i++){
+        if(strcmp(word, magenta_keyword[i]) == 0) return 1;
+    }
+    return 0;
 }
 
 //현재의 buffer의 인덱스와 first를 비교해서 정확한 커서위치를 찾아주는 함수
@@ -283,8 +385,10 @@ void input(){
         
         //<특수키 입력 처리 부분>
         //Ctrl + Q 를 입력시 프로그램 종료
-        if(ch == 17)
+        if(ch == 17){
+            exitProgram();
             break;
+        }
         //Ctrl + S 입력시 파일 저장
         else if(ch == 19)
             saveFile();
@@ -401,6 +505,15 @@ void input(){
                 buffer[i][j++] = ch;
             }
         }
+        else if(ch == '\t'){
+            if(strlen(buffer[i]) + 4 < MAX_LINE_LEN){
+                memmove(&buffer[i][j+4], &buffer[i][j], strlen(&buffer[i][j]) + 1);
+
+                for (int k =0; k < 4; k++){
+                    buffer[i][j++] = ' ';
+                }
+            }
+        }
         pthread_mutex_unlock(&mutex);
         //printScreen();
     }
@@ -414,6 +527,7 @@ void exitProgram(){
 }
 
 int main(int argc, char* argv[]) {
+
 	if (argc < 2) {
         fprintf(stderr, "please command ./ne [filename]\n");
         exit(1);
