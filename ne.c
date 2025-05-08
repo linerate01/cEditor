@@ -20,7 +20,7 @@ char buffer[MAX_LINES][MAX_LINE_LEN];
 
 //라인 버퍼의 현재 위치를 알려주는 변수
 int i = 0;
-int j = 4;
+int j = 0;
 //화면상의 커서의 위치를 알려주는 변수(cursor_j는 필요없다고 판단)
 int cursor_i = 0;
 //화면상에서 맨 첫줄에 출력할 라인 버퍼를 가리키는 변수
@@ -251,7 +251,9 @@ void jump() {
 
 //동작의 성공, 오류, 특별한 알림을 출력하는 함수
 void notification(char* message){
-
+    pthread_mutex_lock(&mutex);
+    mvprintw(first + rows - 1, 0, "%s", message);
+    pthread_mutex_unlock(&mutex);
 }
 
 //문자의 입력, 지움, 줄바꿈 마다 그 업데이트된 내용을 출력
