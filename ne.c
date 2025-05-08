@@ -20,7 +20,7 @@ char buffer[MAX_LINES][MAX_LINE_LEN];
 
 //라인 버퍼의 현재 위치를 알려주는 변수
 int i = 0;
-int j = 0;
+int j = 4;
 //화면상의 커서의 위치를 알려주는 변수(cursor_j는 필요없다고 판단)
 int cursor_i = 0;
 //화면상에서 맨 첫줄에 출력할 라인 버퍼를 가리키는 변수
@@ -31,6 +31,9 @@ int rows, cols;
 int totalLines = 0;
 //복사한 문자열을 저장할 함수
 char copiedStr[MAX_LINE_LEN];
+
+//Ctrl + Z 
+char preStr[MAX_LINE_LEN];
 //마우스 입력 이벤트를 감지하기 위한 변수
 MEVENT event;
 
@@ -218,7 +221,10 @@ void newFileOpen(char* filePath) {
 
 //Ctrl + Z 로 되돌리는 기능
 void backward(){
-	printScreen();	
+	pthread_mutex_lock(&mutex);
+    strcpy(buffer[i], preStr);
+    j = strlen(preStr);
+    pthread_mutex_unlock(&mutex);
 }
 
 //Ctrl + C 로 복사하는 기능
@@ -252,7 +258,7 @@ void notification(char* message){
 void printScreen(){
     pthread_mutex_lock(&mutex);
     int screen_i = 0;
-    for(int buffer_i = first; buffer_i < first + rows; buffer_i++){
+    for(int buffer_i = first; buffer_i < first + rows - 1; buffer_i++){
         move(screen_i, 0);
         clrtoeol();
 
@@ -338,6 +344,8 @@ void printScreen(){
         }
         screen_i++;
     }
+    
+    mvprintw(first + rows - 1, 0, "%s(%d, %d)", currentFileName, i, j);
     move(cursor_i, j);
     refresh();
     pthread_mutex_unlock(&mutex);
@@ -368,7 +376,7 @@ void checkUp(){ //i값이 감소했을 때 호출(위로 스크롤)
     }
 }
 void checkDown(){ //i값이 증가했을 때 호출(아래로 스크롤)
-    if(i > rows-1 && cursor_i == rows-1){
+    if(i > rows-2 && cursor_i == rows-2){
         first++;
     }
     else{
@@ -408,6 +416,7 @@ void input(){
                 i--;
                 j = strlen(buffer[i]);
                 checkUp();
+                strcpy(preStr, buffer[i]);
             }
         }
         else if(ch == KEY_RIGHT){
@@ -418,17 +427,20 @@ void input(){
                 i++;
                 j = 0;
                 checkDown();
+                strcpy(preStr, buffer[i]);
             }
         }
         else if(ch == KEY_UP && i > 0){
             i--;
             j = strlen(buffer[i]);
             checkUp();
+            strcpy(preStr, buffer[i]);
         }
         else if(ch == KEY_DOWN && i < totalLines){
             i++;
             j = strlen(buffer[i]);
             checkDown();
+            strcpy(preStr, buffer[i]);
         }
 
         //<마우스로 커서 위치를 이동하는 부분>
@@ -443,6 +455,8 @@ void input(){
                         j = event.x;
                 }
             }
+            //Ctrl + Z
+            strcpy(preStr, buffer[i]);
         }
 
         //<텍스트 입력 부분>
@@ -464,6 +478,7 @@ void input(){
                 j = 0;
             }
             checkDown();
+            strcpy(preStr, buffer[i]);
         }
         //백스페이스 입력시 문자 지우기 처리
         else if((ch == 127 || ch == 8 || ch == KEY_BACKSPACE)){
@@ -480,6 +495,7 @@ void input(){
                 }
                 checkUp();
                 totalLines--;
+                strcpy(preStr, buffer[i]);
             }
         }
         //입력한 문자가 영어면 버퍼에 저장하고 출력
@@ -514,7 +530,6 @@ void input(){
             }
         }
         pthread_mutex_unlock(&mutex);
-        //printScreen();
     }
 }
 
