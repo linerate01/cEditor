@@ -277,6 +277,8 @@ void printScreen(){
 
         const char *line = buffer[buffer_i];
         int len = strlen(line);
+        if(len > cols - 1)
+            len = cols - 1;
         int in_string = 0, in_comment = 0;
         int x = 0;
 
@@ -358,6 +360,9 @@ void printScreen(){
         screen_i++;
     }
     
+    //밑에 메뉴 출력
+    if(j > cols - 1)
+        j = cols - 1;
     mvprintw(first + rows - 1, 0, "%s(%d, %d)", currentFileName, i, j);
     move(cursor_i, j);
     refresh();
@@ -428,6 +433,7 @@ void input(){
         pthread_mutex_lock(&mutex);
         //<방향키로 커서 조작하는 부분>
         if(ch == KEY_LEFT){
+
             if(j > 0){
                 j--;
             }
