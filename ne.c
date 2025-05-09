@@ -47,6 +47,7 @@ void copy();
 void paste();
 void jump();
 void notification();
+void complie();
 void input();
 void printScreen();
 void exitProgram();
@@ -96,6 +97,16 @@ void initProgram(){
     signal(SIGALRM, autoSaveHandler);
     alarm(5);
     mousemask(BUTTON1_PRESSED | BUTTON2_PRESSED, NULL); //마우스 클릭 이벤트 설정
+}
+
+//컴파일 하는 함수
+void compile(){
+    saveFile();
+    char command[128] = "tmux split-window -h -l 40 'sh -c \"./compile ";
+    strcat(command, currentFileName);
+    strcat(command, "; exec bash\"'");
+    system("tmux kill-pane -a");
+    system(command);
 }
 
 void autoSaveHandler() {
@@ -407,6 +418,12 @@ void input(){
 			paste();
 		else if (ch == 26)
 			backward();
+        else if (ch == 24) //f11같은 키가 잘 안 들어서 Ctrl + X 로 실행키 변경
+            compile();
+        else if(ch == 1)
+            system("tmux resize-pane -L 5");
+        else if(ch == 4)
+            system("tmux resize-pane -R 5");
 
         pthread_mutex_lock(&mutex);
         //<방향키로 커서 조작하는 부분>
@@ -537,6 +554,7 @@ void input(){
 
 //프로그램의 종료를 실행
 void exitProgram(){
+    system("tmux kill-pane -a");
     saveFile(); //종료시 자동 저장
     endwin();
     exit(0);
