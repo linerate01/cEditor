@@ -25,6 +25,7 @@ int j = 0;
 int cursor_i = 0;
 //화면상에서 맨 첫줄에 출력할 라인 버퍼를 가리키는 변수
 int first = 0;
+int start = 4;
 //화면의 크기를 가져올 변수
 int rows, cols;
 //현재까지 작성한 총 줄의 갯수를 알려주는 변수
@@ -123,10 +124,10 @@ void autoSaveHandler() {
 //현재 화면 사이즈를 조절했을 때, [A 같은 이상한 값이 버퍼에 들어가는 버그가 있음(해결 요망)
 void setWinSize() {
 	endwin();
+    flushinp();
 	refresh();
 	clear();
 	getmaxyx(stdscr, rows, cols);
-    flushinp();
     //화면을 줄였을 때, cursor_i가 화면 바깥의 값을 그대로 가리키는 버그가 있음
     //이를 고치기위해 cursor_i를 화면 안 으로 끄집어 올리는 코드를 작성
     if(cursor_i > rows - 1){
@@ -257,7 +258,56 @@ void paste() {
 
 //Ctrl + J 로 원하는 줄로 jump하는 기능
 void jump() {
-    
+    pthread_mutex_lock(&mutex);
+    int pageNum = 0;
+
+    int arr[3];
+    int idx = 0;
+    int ten = 1;
+
+    char *msg = "please enter page number: ";
+    int cursor_j = strlen(msg);
+    mvprintw(first + rows - 1, 0, "%s", msg);
+    move(first + rows - 1, cursor_j);
+
+    while (1) {
+        int ch = getch();
+        
+        if (ch == 10 || ch == KEY_ENTER) {
+            move(first + rows - 1, 0);
+            clrtoeol();
+            mvprintw(first + rows - 1, 0, "%s(%d, %d)", currentFileName, i, j);
+            break;
+        } else if (ch == 127 || ch == 8 || ch == KEY_BACKSPACE) {
+            if (idx > 0) {
+                mvaddch(first + rows - 1, --cursor_j, ' ');
+                move(first + rows - 1, cursor_j);
+                idx--;
+            }
+        } else if (isdigit(ch))  {
+            if (idx < (sizeof(arr) / sizeof(int))) {
+                arr[idx++] = ch - '0';
+                mvaddch(first + rows - 1, cursor_j++, ch);
+            }
+        }
+    }
+
+    for (int k = 0; k < idx; k++) {
+        pageNum = pageNum * 10 + arr[k];
+    }
+    if (pageNum > totalLines) {
+        mvprintw(first + rows - 1, 0, "Invalid page number!");
+        clrtoeol();
+        mvprintw(first + rows - 1, 0, "%s(%d, %d)", currentFileName, i, j);
+    } else {
+        first = pageNum;
+        i = pageNum;
+        j = strlen(buffer[i]);
+        cursor_i = 0;
+        move(cursor_i, j + start);
+        printScreen();
+    }
+    pthread_mutex_unlock(&mutex);
 }
 
 //동작의 성공, 오류, 특별한 알림을 출력하는 함수
@@ -272,7 +322,13 @@ void printScreen(){
     pthread_mutex_lock(&mutex);
     int screen_i = 0;
     for(int buffer_i = first; buffer_i < first + rows - 1; buffer_i++){
-        move(screen_i, 0);
+        
+        //make line number
+        mvaddch(buffer_i, 0, 48 + buffer_i / 100);
+        mvaddch(buffer_i, 1, 48 + (buffer_i % 100) / 10);
+        mvaddch(buffer_i, 2, 48 + buffer_i % 10);
+
+        move(screen_i, start);
         clrtoeol();
 
         const char *line = buffer[buffer_i];
@@ -280,7 +336,7 @@ void printScreen(){
         if(len > cols - 1)
             len = cols - 1;
         int in_string = 0, in_comment = 0;
-        int x = 0;
+        int x = start;
 
         // " "안에 있는 문장 처리
         for(int j=0; j<len;){
@@ -363,8 +419,10 @@ void printScreen(){
     //밑에 메뉴 출력
     if(j > cols - 1)
         j = cols - 1;
+    move(first + rows - 1, 0);
+    clrtoeol();
     mvprintw(first + rows - 1, 0, "%s(%d, %d)", currentFileName, i, j);
-    move(cursor_i, j);
+    move(cursor_i, j + start);
     refresh();
     pthread_mutex_unlock(&mutex);
 }
@@ -406,6 +464,7 @@ void checkDown(){ //i값이 증가했을 때 호출(아래로 스크롤)
 void input(){
     while(1){
         printScreen();
+        flushinp();
         int ch = getch();
         
         //<특수키 입력 처리 부분>
@@ -425,6 +484,8 @@ void input(){
 			backward();
         else if (ch == 24) //f11같은 키가 잘 안 들어서 Ctrl + X 로 실행키 변경
             compile();
+        else if (ch == 5)
+            jump();
         else if(ch == 1)
             system("tmux resize-pane -L 5");
         else if(ch == 4)
@@ -439,7 +500,7 @@ void input(){
             }
             else if(i > 0 && j == 0){ //만약 맨 왼쪽에서 왼쪽키를 누르면 윗줄의 맨 뒤로 이동
                 i--;
-                j = strlen(buffer[i]);
+                j = start + strlen(buffer[i]);
                 checkUp();
                 strcpy(preStr, buffer[i]);
             }
