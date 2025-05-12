@@ -434,7 +434,7 @@ void printScreen(){
         j = cols - 1;
     move(rows - 1, 0);
     clrtoeol();
-    mvprintw(rows - 1, 0, "row : %d, col : %d %-10s", i, j, currentFileName);
+    mvprintw(rows - 1, 0, "row:%d, col:%d %20s", i, j, currentFileName);
     move(cursor_i, j + start);
     refresh();
     pthread_mutex_unlock(&mutex);
