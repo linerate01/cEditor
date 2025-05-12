@@ -266,15 +266,15 @@ void jump() {
     pthread_mutex_lock(&mutex);
     int pageNum = 0;
 
-    int arr[INT_MAX];
+    int arr[3];
     
     int idx = 0;
     int ten = 1;
 
     char *msg = "please enter page number: ";
     int cursor_j = strlen(msg);
-    mvprintw(first + rows - 1, 0, "%s", msg);
-    move(first + rows - 1, cursor_j);
+    mvprintw(rows - 1, 0, "%s", msg);
+    move(rows - 1, cursor_j);
 
     while (1) {
         int ch = getch();
@@ -283,15 +283,15 @@ void jump() {
             break;
         } else if (ch == 127 || ch == 8 || ch == KEY_BACKSPACE) {
             if (idx > 0) {
-                mvaddch(first + rows - 1, --cursor_j, ' ');
+                mvaddch(rows - 1, --cursor_j, ' ');
                 refresh();
-                move(first + rows - 1, cursor_j);
+                move(rows - 1, cursor_j);
                 arr[--idx] = 0;
             }
         } else if (isdigit(ch))  {
             if (idx < (sizeof(arr) / sizeof(int))) {
                 arr[idx++] = ch - '0';
-                mvaddch(first + rows - 1, cursor_j++, ch);
+                mvaddch(rows - 1, cursor_j++, ch);
                 refresh();
             }
         }
@@ -303,8 +303,8 @@ void jump() {
     first = pageNum;
     i = pageNum;
     j = 0;
-    move(0, start);
-    
+    cursor_i = 0;
+
     pthread_mutex_unlock(&mutex);
 }
 
@@ -331,12 +331,12 @@ void printScreen(){
     start = digit + 1;
     for(int buffer_i = first; buffer_i < first + rows - 1; buffer_i++){
         //make line number
-        move(buffer_i, 0);
+        move(screen_i, 0);
         clrtoeol();
         if (buffer_i <= totalLines) {
             int tmp = buffer_i;
             for (int k = 0; k < digit; k++) {
-                mvaddch(buffer_i, digit-k-1, 48 + tmp % 10);
+                mvaddch(screen_i, digit-k-1, 48 + tmp % 10);
                 if (!(tmp / 10)) break;
                 else tmp /= 10;
             }
@@ -432,9 +432,9 @@ void printScreen(){
     //밑에 메뉴 출력
     if(j > cols - 1)
         j = cols - 1;
-    move(first + rows - 1, 0);
+    move(rows - 1, 0);
     clrtoeol();
-    mvprintw(first + rows - 1, 0, "%s(%d, %d)%-d", currentFileName, i, j, totalLines);
+    mvprintw(rows - 1, 0, "row : %d, col : %d %-10s", i, j, currentFileName);
     move(cursor_i, j + start);
     refresh();
     pthread_mutex_unlock(&mutex);
