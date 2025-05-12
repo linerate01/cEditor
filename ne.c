@@ -10,6 +10,7 @@
 #include <sys/types.h>
 #include <pthread.h>
 #include <ctype.h>
+#include <limits.h>
 
 //버퍼의 크기(필요에 따라 크기를 늘리거나 줄일 예정정)
 #define MAX_LINE_LEN 100
@@ -25,11 +26,14 @@ int j = 0;
 int cursor_i = 0;
 //화면상에서 맨 첫줄에 출력할 라인 버퍼를 가리키는 변수
 int first = 0;
-int start = 4;
+int start;
 //화면의 크기를 가져올 변수
 int rows, cols;
 //현재까지 작성한 총 줄의 갯수를 알려주는 변수
 int totalLines = 0;
+
+// line digits
+int digit;
 //복사한 문자열을 저장할 함수
 char copiedStr[MAX_LINE_LEN];
 
@@ -47,6 +51,7 @@ void backward();
 void copy();
 void paste();
 void jump();
+void find();
 void notification();
 void complie();
 void input();
@@ -261,7 +266,8 @@ void jump() {
     pthread_mutex_lock(&mutex);
     int pageNum = 0;
 
-    int arr[3];
+    int arr[INT_MAX];
+    
     int idx = 0;
     int ten = 1;
 
@@ -273,40 +279,32 @@ void jump() {
     while (1) {
         int ch = getch();
         
-        if (ch == 10 || ch == KEY_ENTER) {
-            move(first + rows - 1, 0);
-            clrtoeol();
-            mvprintw(first + rows - 1, 0, "%s(%d, %d)", currentFileName, i, j);
+        if (ch == '\n' || ch == KEY_ENTER) {
             break;
         } else if (ch == 127 || ch == 8 || ch == KEY_BACKSPACE) {
             if (idx > 0) {
                 mvaddch(first + rows - 1, --cursor_j, ' ');
+                refresh();
                 move(first + rows - 1, cursor_j);
-                idx--;
+                arr[--idx] = 0;
             }
         } else if (isdigit(ch))  {
             if (idx < (sizeof(arr) / sizeof(int))) {
                 arr[idx++] = ch - '0';
                 mvaddch(first + rows - 1, cursor_j++, ch);
+                refresh();
             }
         }
     }
 
-    for (int k = 0; k < idx; k++) {
-        pageNum = pageNum * 10 + arr[k];
-    }
-    if (pageNum > totalLines) {
-        mvprintw(first + rows - 1, 0, "Invalid page number!");
-        clrtoeol();
-        mvprintw(first + rows - 1, 0, "%s(%d, %d)", currentFileName, i, j);
-    } else {
-        first = pageNum;
-        i = pageNum;
-        j = strlen(buffer[i]);
-        cursor_i = 0;
-        move(cursor_i, j + start);
-        printScreen();
-    }
+    for (int k = 0; k < idx; k++) 
+        pageNum = (pageNum * 10) + arr[k];
+    
+    first = pageNum;
+    i = pageNum;
+    j = 0;
+    move(0, start);
+    
     pthread_mutex_unlock(&mutex);
 }
 
@@ -321,13 +319,28 @@ void notification(char* message){
 void printScreen(){
     pthread_mutex_lock(&mutex);
     int screen_i = 0;
-    for(int buffer_i = first; buffer_i < first + rows - 1; buffer_i++){
-        
-        //make line number
-        mvaddch(buffer_i, 0, 48 + buffer_i / 100);
-        mvaddch(buffer_i, 1, 48 + (buffer_i % 100) / 10);
-        mvaddch(buffer_i, 2, 48 + buffer_i % 10);
+    int cnt = 1;
+    int ten = 10;
 
+    while (totalLines >= ten) {
+        ten *= 10;
+        cnt++;
+    }
+
+    digit = cnt;
+    start = digit + 1;
+    for(int buffer_i = first; buffer_i < first + rows - 1; buffer_i++){
+        //make line number
+        move(buffer_i, 0);
+        clrtoeol();
+        if (buffer_i <= totalLines) {
+            int tmp = buffer_i;
+            for (int k = 0; k < digit; k++) {
+                mvaddch(buffer_i, digit-k-1, 48 + tmp % 10);
+                if (!(tmp / 10)) break;
+                else tmp /= 10;
+            }
+        }
         move(screen_i, start);
         clrtoeol();
 
@@ -421,7 +434,7 @@ void printScreen(){
         j = cols - 1;
     move(first + rows - 1, 0);
     clrtoeol();
-    mvprintw(first + rows - 1, 0, "%s(%d, %d)", currentFileName, i, j);
+    mvprintw(first + rows - 1, 0, "%s(%d, %d)%-d", currentFileName, i, j, totalLines);
     move(cursor_i, j + start);
     refresh();
     pthread_mutex_unlock(&mutex);
@@ -500,7 +513,7 @@ void input(){
             }
             else if(i > 0 && j == 0){ //만약 맨 왼쪽에서 왼쪽키를 누르면 윗줄의 맨 뒤로 이동
                 i--;
-                j = start + strlen(buffer[i]);
+                j = strlen(buffer[i]);
                 checkUp();
                 strcpy(preStr, buffer[i]);
             }
