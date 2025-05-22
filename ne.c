@@ -273,6 +273,8 @@ void jump() {
 
     char *msg = "please enter page number: ";
     int cursor_j = strlen(msg);
+    move(rows - 1, 0);
+    clrtoeol();
     mvprintw(rows - 1, 0, "%s", msg);
     move(rows - 1, cursor_j);
 
