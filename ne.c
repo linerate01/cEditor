@@ -348,8 +348,8 @@ void printScreen(){
 
         const char *line = buffer[buffer_i];
         int len = strlen(line);
-        if(len > cols - 1)
-            len = cols - 1;
+        if(len > cols - digit - 1)
+            len = cols - digit - 1;
         int in_string = 0, in_comment = 0;
         int x = start;
 
@@ -432,8 +432,8 @@ void printScreen(){
     }
     
     //밑에 메뉴 출력
-    if(j > cols - 1)
-        j = cols - 1;
+    if(j > cols - digit - 1)
+        j = cols - digit - 1;
     move(rows - 1, 0);
     clrtoeol();
     mvprintw(rows - 1, 0, "row:%d, col:%d %20s", i, j, currentFileName);
