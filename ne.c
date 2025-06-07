@@ -482,6 +482,7 @@ void input(){
         flushinp();
         int ch = getch();
         
+        pthread_mutex_lock(&mutex);
         //<특수키 입력 처리 부분>
         //Ctrl + Q 를 입력시 프로그램 종료
         if(ch == 17){
@@ -506,7 +507,6 @@ void input(){
         else if(ch == 4)
             system("tmux resize-pane -R 5");
 
-        pthread_mutex_lock(&mutex);
         //<방향키로 커서 조작하는 부분>
         if(ch == KEY_LEFT){
 
@@ -636,8 +636,11 @@ void input(){
 
 //프로그램의 종료를 실행
 void exitProgram(){
+    pthread_mutex_lock(&mutex);
+    saveFile();
+    pthread_mutex_unlock(&mutex);
+
     system("tmux kill-pane -a");
-    saveFile(); //종료시 자동 저장
     endwin();
     exit(0);
 }
