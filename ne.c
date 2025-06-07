@@ -478,11 +478,11 @@ void checkDown(){ //i값이 증가했을 때 호출(아래로 스크롤)
 //내용을 입력받는 함수
 void input(){
     while(1){
+        pthread_mutex_lock(&mutex);
         printScreen();
         flushinp();
         int ch = getch();
         
-        pthread_mutex_lock(&mutex);
         //<특수키 입력 처리 부분>
         //Ctrl + Q 를 입력시 프로그램 종료
         if(ch == 17){
@@ -499,6 +499,7 @@ void input(){
 		else if (ch == 26)
 			backward();
         else if (ch == 24) //f11같은 키가 잘 안 들어서 Ctrl + X 로 실행키 변경
+            compile();
             compile();
         else if (ch == 5)
             jump();
@@ -636,11 +637,8 @@ void input(){
 
 //프로그램의 종료를 실행
 void exitProgram(){
-    pthread_mutex_lock(&mutex);
-    saveFile();
-    pthread_mutex_unlock(&mutex);
-
     system("tmux kill-pane -a");
+    saveFile(); //종료시 자동 저장
     endwin();
     exit(0);
 }
