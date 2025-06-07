@@ -261,7 +261,7 @@ void paste() {
     pthread_mutex_unlock(&mutex);
 }
 
-//Ctrl + J 로 원하는 줄로 jump하는 기능
+//Ctrl + E 로 원하는 줄로 jump하는 기능
 void jump() {
     pthread_mutex_lock(&mutex);
     int pageNum = 0;
@@ -302,8 +302,8 @@ void jump() {
     for (int k = 0; k < idx; k++) 
         pageNum = (pageNum * 10) + arr[k];
     
-    first = pageNum;
-    i = pageNum;
+    first = pageNum-1;
+    i = pageNum-1;
     j = 0;
     cursor_i = 0;
 
@@ -336,7 +336,7 @@ void printScreen(){
         move(screen_i, 0);
         clrtoeol();
         if (buffer_i <= totalLines) {
-            int tmp = buffer_i;
+            int tmp = buffer_i+1;
             for (int k = 0; k < digit; k++) {
                 mvaddch(screen_i, digit-k-1, 48 + tmp % 10);
                 if (!(tmp / 10)) break;
@@ -478,11 +478,10 @@ void checkDown(){ //i값이 증가했을 때 호출(아래로 스크롤)
 //내용을 입력받는 함수
 void input(){
     while(1){
-        pthread_mutex_lock(&mutex);
         printScreen();
         flushinp();
         int ch = getch();
-        
+       
         //<특수키 입력 처리 부분>
         //Ctrl + Q 를 입력시 프로그램 종료
         if(ch == 17){
@@ -500,14 +499,13 @@ void input(){
 			backward();
         else if (ch == 24) //f11같은 키가 잘 안 들어서 Ctrl + X 로 실행키 변경
             compile();
-            compile();
         else if (ch == 5)
             jump();
         else if(ch == 1)
             system("tmux resize-pane -L 5");
         else if(ch == 4)
             system("tmux resize-pane -R 5");
-
+        pthread_mutex_lock(&mutex);
         //<방향키로 커서 조작하는 부분>
         if(ch == KEY_LEFT){
 
