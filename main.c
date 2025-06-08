@@ -33,6 +33,8 @@ int input_enabled = 0;
 int scroll_offset = 0;  // 현재 화면의 첫 줄이 editor_buf 몇 번째 줄인지
 int cursor_x = 0, cursor_y = 0;
 char editor_buf[MAX_ROWS][MAX_COLS];
+char copiedStr[MAX_COLS];
+char preStr[MAX_COLS];
 char opened_filename[256] = "";
 char link_flags[256] = "";
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -68,9 +70,78 @@ void save_current_file();
 void* saveFileThread(void*);
 void autoSaveHandler();
 
+void copy();
+void paste();
+void backward();
+void jump();
+
 const char* cyan_keywords[] = {"int", "double", "float", "enum", "char", "short", "long", "malloc", "free", "calloc", "realloc", NULL};
 const char* magenta_keywords[] = {"void", "unsigned", "signed", "sizeof", "typedef", "struct", "union", "extern", "static", "const",
                                  "if", "else", "switch", "case", "default", "while", "for", "do", "continue", "break", "return", NULL};
+
+void backward() {
+    pthread_mutex_lock(&mutex);
+    strcpy(editor_buf[scroll_offset + cursor_y], preStr);
+    cursor_x = strlen(preStr);
+    pthread_mutex_unlock(&mutex);
+    render_editor_buffer();
+}
+
+void copy() {
+    strcpy(copiedStr, editor_buf[scroll_offset + cursor_y]);
+}
+
+void paste() {
+    pthread_mutex_lock(&mutex);
+    strcpy(editor_buf[scroll_offset + cursor_y], copiedStr);
+    pthread_mutex_unlock(&mutex);
+    render_editor_buffer();
+}
+
+void jump() {
+    int pageNum = 0;
+    int arr[3];
+    int idx = 0;
+    int ten = 1;
+    int rows, cols;
+    getmaxyx(stdscr, rows, cols);
+    char *msg = "please enter page number: ";
+    int cursor_j = strlen(msg);
+    move(rows - 1, 0);
+    clrtoeol();
+    mvprintw(rows - 1, 0, "%s", msg);
+    move(rows - 1, cursor_j);
+    
+    while (1) {
+        int ch = getch();
+        
+        if (ch == '\n' || ch == KEY_ENTER) {
+            break;
+        } else if (ch == 127 || ch == 8 || ch == KEY_BACKSPACE) {
+            if (idx > 0) {
+                mvaddch(rows - 1, --cursor_j, ' ');
+                refresh();
+                move(rows - 1, cursor_j);
+                arr[--idx] = 0;
+            }
+        } else if (isdigit(ch))  {
+            if (idx < (sizeof(arr) / sizeof(int))) {
+                arr[idx++] = ch - '0';
+                mvaddch(rows - 1, cursor_j++, ch);
+                refresh();
+            }
+        }
+    }
+
+    for (int k = 0; k < idx; k++) 
+        pageNum = (pageNum * 10) + arr[k];
+    
+    scroll_offset = pageNum-1;
+    cursor_x = 0;
+    cursor_y = 0;
+
+    pthread_mutex_unlock(&mutex);
+}
 
 void autoSaveHandler() {
     pthread_t t;
@@ -476,6 +547,7 @@ void handle_key_input(int ch) {
                 actual_row = cursor_y + scroll_offset;
                 cursor_x = strlen(editor_buf[actual_row]);
             }
+            strcpy(preStr, editor_buf[actual_row]);
             break;
 
         case KEY_RIGHT: // 오른쪽으로 이동
@@ -488,6 +560,7 @@ void handle_key_input(int ch) {
                 scroll_offset++;
                 cursor_x = gutter;
             }
+            strcpy(preStr, editor_buf[scroll_offset + cursor_y]);
             break;
 
         case KEY_UP: // 위로 이동
@@ -498,6 +571,7 @@ void handle_key_input(int ch) {
             }
             //그 줄의 뒤로 가도록 계산 
             actual_row = cursor_y + scroll_offset;
+            strcpy(preStr, editor_buf[actual_row]);
             cursor_x = strlen(editor_buf[actual_row]) + gutter;
             break;
 
@@ -510,6 +584,7 @@ void handle_key_input(int ch) {
             }
             //그 줄의 뒤로 가도록 계산 
             actual_row = cursor_y + scroll_offset;
+            strcpy(preStr, editor_buf[actual_row]);
             cursor_x = strlen(editor_buf[actual_row]) + gutter;
             break;
 
@@ -538,6 +613,7 @@ void handle_key_input(int ch) {
                         scroll_offset--;
                     }
                     actual_row = cursor_y + scroll_offset;
+                    strcpy(preStr, editor_buf[actual_row]);
                     cursor_x = prev_len + gutter;
                 }
             }
@@ -585,11 +661,32 @@ void handle_key_input(int ch) {
                 cursor_x = gutter;
                 actual_col = 0;
                 actual_row = cursor_y + scroll_offset;
+                strcpy(preStr, editor_buf[actual_row]);
             }
             countBlock(actual_row, actual_col);
             pthread_mutex_unlock(&mutex);
             break;
-
+        case 3:
+            copy();
+            break;
+       case 22:
+            paste();
+            render_editor_buffer();
+            break;
+       case 26:
+            backward();
+            break;
+       case 5:
+            jump();
+            break;
+        case 17: // ctrl q
+            save_current_file();
+            endwin();
+            exit(0);
+            break;
+        case 24: // ctrl+x
+            run_in_gnome_terminal();
+            break;
         default:
             if (ch == '\t') {
                 // 탭 키 입력 시 공백 4칸 삽입
@@ -951,6 +1048,8 @@ int main() {
     // alarm for autosave
     signal(SIGALRM, autoSaveHandler);
     alarm(5);
+    signal(SIGINT, copy);
+    signal(SIGTSTP, backward);
     //draw_status_bar("Ctrl+L: menu | F10: exit | F5: compile & run | Ctrl+F: find");
 
     int ch;
@@ -983,12 +1082,10 @@ int main() {
             continue;
         }
 
-        if (!handle_menu_input(ch)) {
-            handle_key_input(ch);
+        if (!handle_menu_input(ch)) {   
+            handle_key_input(ch); 
         }
     }
-
-
     endwin();
     return 0;
 }
