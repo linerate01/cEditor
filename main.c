@@ -80,6 +80,74 @@ const char* cyan_keywords[] = {"int", "double", "float", "enum", "char", "short"
 const char* magenta_keywords[] = {"void", "unsigned", "signed", "sizeof", "typedef", "struct", "union", "extern", "static", "const",
                                  "if", "else", "switch", "case", "default", "while", "for", "do", "continue", "break", "return", NULL};
 
+
+//copy several lines by input from users
+void copy() {
+    int pageNum = 0;
+    int arr[3];
+    int idx = 0;
+    int ten = 1;
+    int rows, cols;
+    getmaxyx(stdscr, rows, cols);
+    char *msg = "please enter copy lines number: ";
+    int cursor_j = strlen(msg);
+    move(rows - 1, 0);
+    clrtoeol();
+    mvprintw(rows - 1, 0, "%s", msg);
+    move(rows - 1, cursor_j);
+    
+    while (1) {
+        int ch = getch();
+        
+        if (ch == '\n' || ch == KEY_ENTER) {
+            break;
+        } else if (ch == 127 || ch == 8 || ch == KEY_BACKSPACE) {
+            if (idx > 0) {
+                mvaddch(rows - 1, --cursor_j, ' ');
+                refresh();
+                move(rows - 1, cursor_j);
+                arr[--idx] = 0;
+            }
+        } else if (isdigit(ch))  {
+            if (idx < (sizeof(arr) / sizeof(int))) {
+                arr[idx++] = ch - '0';
+                mvaddch(rows - 1, cursor_j++, ch);
+                refresh();
+            }
+        }
+    }
+    for (int k = 0; k < idx; k++) 
+    pageNum = (pageNum * 10) + arr[k];
+   
+    for (int k = scroll_offset + cursor_y; k < scroll_offset + cursor_y + pageNum; k++) {
+        strcpy(copiedStr[copiedNum++], editor_buf[k]);
+    }
+    copiedStart = scroll_offset + cursor_y;
+
+    pthread_mutex_unlock(&mutex);
+}
+
+void paste() {
+    pthread_mutex_lock(&mutex);
+    strcpy(editor_buf[scroll_offset + cursor_y], copiedStr);
+
+    for (int k = MAX_ROWS - 1; k > copiedNum + cursor_y + scroll_offset; k--) {
+        strcpy(editor_buf[k], editor_buf[k-copiedNum]);
+    }
+
+    int j = 0;
+    for (int k = scroll_offset + cursor_y;  k < scroll_offset + cursor_y + copiedNum; k++) {
+        strcpy(editor_buf[k], copiedStr[j++]);
+    }
+    memset(copiedStr, 0, sizeof(copiedStr));
+
+    pthread_mutex_unlock(&mutex);
+    copiedNum = 0;Add commentMore actions
+    copiedStart = 0;
+
+    render_editor_buffer();
+}
+
 void show_help_guide_popup() {
     const char* help_text[] = {
         "Nice Editor - Usage Guide",
