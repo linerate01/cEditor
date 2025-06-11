@@ -13,7 +13,7 @@
 #define MENU_HEIGHT 1
 #define STATUS_HEIGHT 1
 #define MAX_FILES 256
-#define MAX_ROWS 1000
+#define MAX_ROWS 1500
 #define MAX_COLS 256
 
 WINDOW* editor_win;
@@ -21,8 +21,9 @@ WINDOW* editor_win;
 const char* menu_titles[] = {"File", "Build", "Option", "Help"};
 const char* file_menu[] = {"New", "Open", "Save", "Exit"};
 const char* build_menu[] = {"Run", "Link"};
-const char* option_menu[] = {"NUM", "SYN", "{ }"};
-char status_message[256] = "Welcome to Nice Editor! Press F1 for help.";
+const char* option_menu[] = {"NumLine", "Syntax", "Bracket", "AutoSave", "Seconds"};
+const char* help_menu[] = {"Status", "Guide"};
+char status_message[256] = "";
 
 int show_line_numbers = 0;
 int show_syntax_highlight = 1;
@@ -30,14 +31,13 @@ int hide_brackets = 0;
 int current_menu = -1;
 int current_item = 0;
 int input_enabled = 0;
-int scroll_offset = 0;  // 현재 화면의 첫 줄이 editor_buf 몇 번째 줄인지
+int autosave_enabled = 0;
+int autosave_tick = 5;
+int scroll_offset = 0; 
+
 int cursor_x = 0, cursor_y = 0;
 char editor_buf[MAX_ROWS][MAX_COLS];
-char copiedStr[MAX_COLS][MAX_COLS];
-int copiedNum = 0;
-int copiedStart = 0;
 
-char preStr[MAX_COLS];
 char opened_filename[256] = "";
 char link_flags[256] = "";
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -69,140 +69,114 @@ void countBlock(int actual_row, int actual_col);
 void search_text();
 void save_current_file();
 
-// auto saving
 void* saveFileThread(void*);
 void autoSaveHandler();
 
-void copy();
-void paste();
-void backward();
-void jump();
+int get_menu_item_count(int menu_index);
+void show_help_status_popup();
+void show_help_guide_popup();
 
 const char* cyan_keywords[] = {"int", "double", "float", "enum", "char", "short", "long", "malloc", "free", "calloc", "realloc", NULL};
 const char* magenta_keywords[] = {"void", "unsigned", "signed", "sizeof", "typedef", "struct", "union", "extern", "static", "const",
                                  "if", "else", "switch", "case", "default", "while", "for", "do", "continue", "break", "return", NULL};
 
-void backward() {
-    pthread_mutex_lock(&mutex);
-    strcpy(editor_buf[scroll_offset + cursor_y], preStr);
-    cursor_x = strlen(preStr);
-    pthread_mutex_unlock(&mutex);
+void show_help_guide_popup() {
+    const char* help_text[] = {
+        "Nice Editor - Usage Guide",
+        "",
+        "Ctrl+L         : Open menu",
+        "F5             : Compile and run (gcc)",
+        "Alt+S          : Save file",
+        "Ctrl+F         : Find text",
+        "",
+        "Arrow Keys     : Move cursor",
+        "Enter          : Insert newline",
+        "Backspace      : Delete character",
+        "TAB            : Insert 4 spaces",
+        "",
+        "Menu Shortcuts:",
+        "  File > New/Open/Save/Exit",
+        "  Build > Run/Link",
+        "  Option > Toggle settings",
+        "  Help > View status or guide",
+        "",
+        "This editor supports syntax highlighting,",
+        "line numbering, bracket hiding, auto-save,",
+        "and mouse-less full keyboard navigation.",
+        NULL
+    };
+
+    int total_lines = 0;
+    while (help_text[total_lines]) total_lines++;
+
+    int win_h = 15, win_w = 60;
+    int start_y = (LINES - win_h) / 2;
+    int start_x = (COLS - win_w) / 2;
+
+    WINDOW* win = newwin(win_h, win_w, start_y, start_x);
+    box(win, 0, 0);
+    keypad(win, TRUE);
+
+    int offset = 0;
+    int ch;
+
+    while (1) {
+        werase(win);
+        box(win, 0, 0);
+        for (int i = 0; i < win_h - 2 && i + offset < total_lines; i++) {
+            mvwprintw(win, i + 1, 2, "%s", help_text[i + offset]);
+        }
+        mvwprintw(win, win_h - 1, 2, "Scroll, ESC to exit");
+        wrefresh(win);
+
+        ch = wgetch(win);
+        if (ch == 27) break;
+        else if (ch == KEY_DOWN && offset + win_h - 2 < total_lines) offset++;
+        else if (ch == KEY_UP && offset > 0) offset--;
+    }
+
+    delwin(win);
+    touchwin(stdscr);
+    refresh();
     render_editor_buffer();
 }
 
-void copy() {
-    int pageNum = 0;
-    int arr[3];
-    int idx = 0;
-    int ten = 1;
-    int rows, cols;
-    getmaxyx(stdscr, rows, cols);
-    char *msg = "please enter copy lines number: ";
-    int cursor_j = strlen(msg);
-    move(rows - 1, 0);
-    clrtoeol();
-    mvprintw(rows - 1, 0, "%s", msg);
-    move(rows - 1, cursor_j);
-    
-    while (1) {
-        int ch = getch();
-        
-        if (ch == '\n' || ch == KEY_ENTER) {
-            break;
-        } else if (ch == 127 || ch == 8 || ch == KEY_BACKSPACE) {
-            if (idx > 0) {
-                mvaddch(rows - 1, --cursor_j, ' ');
-                refresh();
-                move(rows - 1, cursor_j);
-                arr[--idx] = 0;
-            }
-        } else if (isdigit(ch))  {
-            if (idx < (sizeof(arr) / sizeof(int))) {
-                arr[idx++] = ch - '0';
-                mvaddch(rows - 1, cursor_j++, ch);
-                refresh();
-            }
-        }
-    }
+void show_help_status_popup() {
+    int win_h = 10, win_w = 50;
+    int start_y = (LINES - win_h) / 2;
+    int start_x = (COLS - win_w) / 2;
+    WINDOW* popup = newwin(win_h, win_w, start_y, start_x);
+    box(popup, 0, 0);
 
-    for (int k = 0; k < idx; k++) 
-        pageNum = (pageNum * 10) + arr[k];
-    
+    mvwprintw(popup, 1, 2, "Current Option Status:");
+    mvwprintw(popup, 2, 4, "Numbering Line       : %s", show_line_numbers ? "ON" : "OFF");
+    mvwprintw(popup, 3, 4, "Syntax Highlighting  : %s", show_syntax_highlight ? "ON" : "OFF");
+    mvwprintw(popup, 4, 4, "Bracket Visibility   : %s", hide_brackets ? "Hidden" : "Shown");
+    mvwprintw(popup, 5, 4, "AutoSave             : %s", autosave_enabled ? "ON" : "OFF");
+    mvwprintw(popup, 6, 4, "AutoSave Interval    : %d sec", autosave_tick);
 
-    for (int k = scroll_offset + cursor_y; k < scroll_offset + cursor_y + pageNum; k++) {
-        strcpy(copiedStr[copiedNum++], editor_buf[k]);
-    }
-    copiedStart = scroll_offset + cursor_y;
+    mvwprintw(popup, 8, 2, "Press ESC to close...");
+    wrefresh(popup);
 
-    pthread_mutex_unlock(&mutex);
-}
-
-void paste() {
-    pthread_mutex_lock(&mutex);
-
-    for (int k = MAX_ROWS - 1; k > copiedNum + cursor_y + scroll_offset; k--) {
-        strcpy(editor_buf[k], editor_buf[k-copiedNum]);
-    }
-
-    int j = 0;
-    for (int k = scroll_offset + cursor_y;  k < scroll_offset + cursor_y + copiedNum; k++) {
-        strcpy(editor_buf[k], copiedStr[j++]);
-    }
-    memset(copiedStr, 0, sizeof(copiedStr));
-
-    pthread_mutex_unlock(&mutex);
-    copiedNum = 0;
-    copiedStart = 0;
-
+    keypad(popup, TRUE);
+    int ch;
+    while ((ch = wgetch(popup)) != 27) {} // ESC
+    delwin(popup);
+    touchwin(stdscr);
+    refresh();
     render_editor_buffer();
 }
 
-void jump() {
-    int pageNum = 0;
-    int arr[3];
-    int idx = 0;
-    int ten = 1;
-    int rows, cols;
-    getmaxyx(stdscr, rows, cols);
-    char *msg = "please enter page number: ";
-    int cursor_j = strlen(msg);
-    move(rows - 1, 0);
-    clrtoeol();
-    mvprintw(rows - 1, 0, "%s", msg);
-    move(rows - 1, cursor_j);
-    
-    while (1) {
-        int ch = getch();
-        
-        if (ch == '\n' || ch == KEY_ENTER) {
-            break;
-        } else if (ch == 127 || ch == 8 || ch == KEY_BACKSPACE) {
-            if (idx > 0) {
-                mvaddch(rows - 1, --cursor_j, ' ');
-                refresh();
-                move(rows - 1, cursor_j);
-                arr[--idx] = 0;
-            }
-        } else if (isdigit(ch))  {
-            if (idx < (sizeof(arr) / sizeof(int))) {
-                arr[idx++] = ch - '0';
-                mvaddch(rows - 1, cursor_j++, ch);
-                refresh();
-            }
-        }
-    }
-
-    for (int k = 0; k < idx; k++) 
-        pageNum = (pageNum * 10) + arr[k];
-    
-    scroll_offset = pageNum-1;
-    cursor_x = 0;
-    cursor_y = 0;
-
-    pthread_mutex_unlock(&mutex);
+int get_menu_item_count(int menu_index) {
+    if (menu_index == 0) return 4;
+    if (menu_index == 1) return 2;
+    if (menu_index == 2) return 5; // NUM, SYN, Bracket, AutoSave, Seconds
+    if (menu_index == 3) return 2;
+    return 0;
 }
 
 void autoSaveHandler() {
+    if (!autosave_enabled) return;
     pthread_t t;
 
     if (pthread_create(&t, NULL, saveFileThread, NULL) != 0) 
@@ -215,7 +189,7 @@ void autoSaveHandler() {
 
 void* saveFileThread(void *arg) {
     pthread_mutex_lock(&mutex);
-    const char* filename = (strlen(opened_filename) > 0) ? opened_filename : "untitled.txt";
+    const char* filename = opened_filename;
     FILE* fp = fopen(filename, "w");
     if (!fp) {
         draw_status_bar("Failed to save file.");
@@ -225,7 +199,7 @@ void* saveFileThread(void *arg) {
         fprintf(fp, "%s\n", editor_buf[i]);
     }
     fclose(fp);
-    draw_status_bar("the file is autosaved.");
+    draw_status_bar("Autosaved.");
     pthread_mutex_unlock(&mutex);
 }
 
@@ -438,10 +412,7 @@ void render_editor_buffer() {
     werase(editor_win);
     box(editor_win, 0, 0);
     int visible_lines = getmaxy(editor_win) - 2;
-    
-    //int editor_cols = getmaxx(editor_win) - 2;
     int gutter = show_line_numbers ? 4 : 0;
-    //int min_cursor_x = gutter + 1;
     pthread_mutex_lock(&mutex);
     for (int y = 0; y < visible_lines; y++) {
         int buf_line = y + scroll_offset;
@@ -513,29 +484,12 @@ void render_editor_buffer() {
             wmove(editor_win, y + 1, cursor_x);
         }
     }
-
-    // 커서 위치 보정
-    /*int actual_row = scroll_offset + cursor_y;
-    int line_len = strlen(editor_buf[actual_row]);
-    if (cursor_x < min_cursor_x)
-        cursor_x = min_cursor_x;
-    if (cursor_x - gutter > line_len)
-        cursor_x = line_len + gutter + 1;
-    if (cursor_x > editor_cols)
-        cursor_x = editor_cols;
-    draw_status_bar(NULL);
-    wmove(editor_win, cursor_y + 1, cursor_x + 1);
-    curs_set(2);
-    wrefresh(editor_win);*/
-
-    //커서 위치 보정 예전꺼
     int max_y = getmaxy(editor_win) - 2;
     int max_x = getmaxx(editor_win) - 2;
     if (cursor_y >= max_y) cursor_y = max_y - 1;
     if (cursor_x >= max_x) cursor_x = max_x - 1;
     if (cursor_y < 0) cursor_y = 0;
     if (cursor_x < 0) cursor_x = 0;
-    draw_status_bar("Ctrl+L: menu | F10: exit | F5: compile & run | Ctrl+F: find");
     wmove(editor_win, cursor_y + 1, cursor_x + 1);
     curs_set(2);
     wrefresh(editor_win);
@@ -604,9 +558,8 @@ void handle_key_input(int ch) {
                     scroll_offset--;
                 }
                 actual_row = cursor_y + scroll_offset;
-                cursor_x = strlen(editor_buf[actual_row]);
+                cursor_x = strlen(editor_buf[actual_row]) + gutter;
             }
-            strcpy(preStr, editor_buf[actual_row]);
             break;
 
         case KEY_RIGHT: // 오른쪽으로 이동
@@ -619,7 +572,6 @@ void handle_key_input(int ch) {
                 scroll_offset++;
                 cursor_x = gutter;
             }
-            strcpy(preStr, editor_buf[scroll_offset + cursor_y]);
             break;
 
         case KEY_UP: // 위로 이동
@@ -630,7 +582,6 @@ void handle_key_input(int ch) {
             }
             //그 줄의 뒤로 가도록 계산 
             actual_row = cursor_y + scroll_offset;
-            strcpy(preStr, editor_buf[actual_row]);
             cursor_x = strlen(editor_buf[actual_row]) + gutter;
             break;
 
@@ -643,7 +594,6 @@ void handle_key_input(int ch) {
             }
             //그 줄의 뒤로 가도록 계산 
             actual_row = cursor_y + scroll_offset;
-            strcpy(preStr, editor_buf[actual_row]);
             cursor_x = strlen(editor_buf[actual_row]) + gutter;
             break;
 
@@ -672,7 +622,6 @@ void handle_key_input(int ch) {
                         scroll_offset--;
                     }
                     actual_row = cursor_y + scroll_offset;
-                    strcpy(preStr, editor_buf[actual_row]);
                     cursor_x = prev_len + gutter;
                 }
             }
@@ -720,32 +669,11 @@ void handle_key_input(int ch) {
                 cursor_x = gutter;
                 actual_col = 0;
                 actual_row = cursor_y + scroll_offset;
-                strcpy(preStr, editor_buf[actual_row]);
             }
             countBlock(actual_row, actual_col);
             pthread_mutex_unlock(&mutex);
             break;
-        case 3:
-            copy();
-            break;
-       case 22:
-            paste();
-            render_editor_buffer();
-            break;
-       case 26:
-            backward();
-            break;
-       case 5:
-            jump();
-            break;
-        case 17: // ctrl q
-            save_current_file();
-            endwin();
-            exit(0);
-            break;
-        case 24: // ctrl+x
-            run_in_gnome_terminal();
-            break;
+
         default:
             if (ch == '\t') {
                 // 탭 키 입력 시 공백 4칸 삽입
@@ -788,16 +716,6 @@ void handle_key_input(int ch) {
             break;
         
     }
-    // 커서 안전 범위 보정
-    /*int min_cursor_x = show_line_numbers ? 4 : 0;
-    int max_y = getmaxy(editor_win) - 2;
-    int max_x = getmaxx(editor_win) - 2;
-    if (cursor_y >= max_y) cursor_y = max_y - 1;
-    if (cursor_y < 0) cursor_y = 0;
-    if (cursor_x >= max_x) cursor_x = max_x - 1;
-    if (cursor_x < min_cursor_x) cursor_x = min_cursor_x;*/
-
-   // 커서가 줄 끝을 넘지 않도록 보정
     int line_len = strlen(editor_buf[actual_row]);
     if (actual_col > line_len) cursor_x = line_len + gutter;
     render_editor_buffer();
@@ -901,15 +819,18 @@ void draw_dropdown(int menu_index) {
         count = 2;
     } else if (menu_index == 2) {
         menu_items = option_menu;
-        count = 3;
-    } else {
+        count = 5;
+    } else if (menu_index == 3) {
+        menu_items = help_menu;
+        count = 2;
+    }else {
         return;
     }
 
     for (int i = 0; i < count; i++) {
-        attron(COLOR_PAIR(i == current_item ? 3 : 1));
+        attron(COLOR_PAIR(i == current_item ? 2 : 1));
         mvprintw(1 + i, x, "%-10s", menu_items[i]);
-        attroff(COLOR_PAIR(i == current_item ? 3 : 1));
+        attroff(COLOR_PAIR(i == current_item ? 2 : 1));
     }
     refresh();
 }
@@ -949,14 +870,18 @@ int handle_menu_input(int ch) {
                 current_item = 0;
                 draw_dropdown(current_menu);
                 break;
-            case KEY_UP:
-                current_item = (current_item + 3) % 4;
+            case KEY_UP: {
+                int count = get_menu_item_count(current_menu);
+                current_item = (current_item + count - 1) % count;
                 draw_dropdown(current_menu);
                 break;
-            case KEY_DOWN:
-                current_item = (current_item + 1) % 4;
+            }
+            case KEY_DOWN: {
+                int count = get_menu_item_count(current_menu);
+                current_item = (current_item + 1) % count;
                 draw_dropdown(current_menu);
                 break;
+            }
             case 10: // Enter
                 clear_dropdown(current_menu);
                 box(editor_win, 0, 0);
@@ -1001,19 +926,48 @@ int handle_menu_input(int ch) {
                         }
                     } else if (current_menu == 2) { // Option
                     const char* item = option_menu[current_item];
-                    if (strcmp(item, "NUM") == 0) {
+                    if (strcmp(item, "NumLine") == 0) {
                         show_line_numbers = !show_line_numbers;
                         draw_status_bar(show_line_numbers ? "Line numbers ON" : "Line numbers OFF");
-                    } else if (strcmp(item, "SYN") == 0) {
+                    } else if (strcmp(item, "Syntax") == 0) {
                         show_syntax_highlight = !show_syntax_highlight;
                         draw_status_bar(show_syntax_highlight ? "Syntax highlight ON" : "Syntax highlight OFF");
-                    } else if (strcmp(item, "{ }") == 0) {
+                    } else if (strcmp(item, "Bracket") == 0) {
                         hide_brackets = !hide_brackets;
                         draw_status_bar(hide_brackets ? "Brackets hidden" : "Brackets shown");
+                    } else if (strcmp(item, "AutoSave") == 0) {
+                        autosave_enabled = !autosave_enabled;
+                        draw_status_bar(autosave_enabled ? "AutoSave ON" : "AutoSave OFF");
+                        if (autosave_enabled) {
+                            alarm(5);  // 시작
+                        } else {
+                            alarm(0);  // 해제
+                        }
+                    }else if (strcmp(item, "Seconds") == 0) {
+                        char input[256] = "";
+                        if (get_user_input("Enter autosave interval (sec):", input)) {
+                            int t = atoi(input);
+                            if (t >= 1 && t <= 3600) {  // 1초 ~ 1시간 범위 제한
+                                autosave_tick = t;
+                                draw_status_bar("AutoSave interval updated.");
+                                if (autosave_enabled) {
+                                    alarm(autosave_tick);  // 즉시 재설정
+                                }
+                            } else {
+                                draw_status_bar("Invalid interval value (1–3600 sec only).");
+                            }
+                        } else {
+                            draw_status_bar("Interval input cancelled.");
+                        }
                     }
                     render_editor_buffer();
                 } else if (current_menu == 3) { // Help
-                    draw_status_bar("[Help] Not Updated Yet.");
+                    const char* item = (current_item == 0) ? "Status" : "Guide";
+                    if (strcmp(item, "Status") == 0) {
+                        show_help_status_popup();
+                    } else if (strcmp(item, "Guide") == 0) {
+                        show_help_guide_popup();
+                    }
                 }
 
                 current_menu = -1;
@@ -1090,7 +1044,6 @@ int main() {
 
     init_pair(1, COLOR_BLACK, COLOR_WHITE);
     init_pair(2, COLOR_WHITE, COLOR_MAGENTA);
-    init_pair(3, COLOR_WHITE, COLOR_MAGENTA);
     init_pair(4, COLOR_MAGENTA, -1);
     init_pair(5, COLOR_YELLOW, -1);   // 문자열
     init_pair(6, COLOR_GREEN, -1);    // 주석
@@ -1100,17 +1053,11 @@ int main() {
 
     draw_menu_bar();
     draw_editor_window();
-    draw_editor_window();   // 테두리 먼저
     show_editor_logo();     // 로고 출력 후 키 입력 대기
     render_editor_buffer(); // 편집기 초기화
     
-    // alarm for autosave
     signal(SIGALRM, autoSaveHandler);
-    alarm(5);
-    signal(SIGINT, copy);
-    signal(SIGTSTP, backward);
-    //draw_status_bar("Ctrl+L: menu | F10: exit | F5: compile & run | Ctrl+F: find");
-
+    draw_status_bar("Welcome to the Nice editor! Press F1 to Guide.");
     int ch;
     while ((ch = getch()) != KEY_F(10)) {
         // Alt+S 입력 감지: ESC → 's'
@@ -1136,16 +1083,21 @@ int main() {
             run_in_gnome_terminal();
             continue;
         }
+        if(ch==KEY_F(1)){
+            show_help_guide_popup();
+            continue;
+        }
         if (ch == 6) {
             search_text();
             continue;
         }
 
-        if (!handle_menu_input(ch)) {   
-            handle_key_input(ch); 
+        if (!handle_menu_input(ch)) {
+            handle_key_input(ch);
         }
     }
+
+
     endwin();
     return 0;
 }
-
