@@ -81,7 +81,7 @@ const char* magenta_keywords[] = {"void", "unsigned", "signed", "sizeof", "typed
                                  "if", "else", "switch", "case", "default", "while", "for", "do", "continue", "break", "return", NULL};
 
 
-//copy several lines by input from users
+// copy several lines by input from users
 void copy() {
     int pageNum = 0;
     int arr[3];
