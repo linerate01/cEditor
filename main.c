@@ -33,7 +33,10 @@ int input_enabled = 0;
 int scroll_offset = 0;  // 현재 화면의 첫 줄이 editor_buf 몇 번째 줄인지
 int cursor_x = 0, cursor_y = 0;
 char editor_buf[MAX_ROWS][MAX_COLS];
-char copiedStr[MAX_COLS];
+char copiedStr[MAX_COLS][MAX_COLS];
+int copiedNum = 0;
+int copiedStart = 0;
+
 char preStr[MAX_COLS];
 char opened_filename[256] = "";
 char link_flags[256] = "";
@@ -88,13 +91,69 @@ void backward() {
 }
 
 void copy() {
-    strcpy(copiedStr, editor_buf[scroll_offset + cursor_y]);
+    int pageNum = 0;
+    int arr[3];
+    int idx = 0;
+    int ten = 1;
+    int rows, cols;
+    getmaxyx(stdscr, rows, cols);
+    char *msg = "please enter copy lines number: ";
+    int cursor_j = strlen(msg);
+    move(rows - 1, 0);
+    clrtoeol();
+    mvprintw(rows - 1, 0, "%s", msg);
+    move(rows - 1, cursor_j);
+    
+    while (1) {
+        int ch = getch();
+        
+        if (ch == '\n' || ch == KEY_ENTER) {
+            break;
+        } else if (ch == 127 || ch == 8 || ch == KEY_BACKSPACE) {
+            if (idx > 0) {
+                mvaddch(rows - 1, --cursor_j, ' ');
+                refresh();
+                move(rows - 1, cursor_j);
+                arr[--idx] = 0;
+            }
+        } else if (isdigit(ch))  {
+            if (idx < (sizeof(arr) / sizeof(int))) {
+                arr[idx++] = ch - '0';
+                mvaddch(rows - 1, cursor_j++, ch);
+                refresh();
+            }
+        }
+    }
+
+    for (int k = 0; k < idx; k++) 
+        pageNum = (pageNum * 10) + arr[k];
+    
+
+    for (int k = scroll_offset + cursor_y; k < scroll_offset + cursor_y + pageNum; k++) {
+        strcpy(copiedStr[copiedNum++], editor_buf[k]);
+    }
+    copiedStart = scroll_offset + cursor_y;
+
+    pthread_mutex_unlock(&mutex);
 }
 
 void paste() {
     pthread_mutex_lock(&mutex);
-    strcpy(editor_buf[scroll_offset + cursor_y], copiedStr);
+
+    for (int k = MAX_ROWS - 1; k > copiedNum + cursor_y + scroll_offset; k--) {
+        strcpy(editor_buf[k], editor_buf[k-copiedNum]);
+    }
+
+    int j = 0;
+    for (int k = scroll_offset + cursor_y;  k < scroll_offset + cursor_y + copiedNum; k++) {
+        strcpy(editor_buf[k], copiedStr[j++]);
+    }
+    memset(copiedStr, 0, sizeof(copiedStr));
+
     pthread_mutex_unlock(&mutex);
+    copiedNum = 0;
+    copiedStart = 0;
+
     render_editor_buffer();
 }
 
