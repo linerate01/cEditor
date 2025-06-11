@@ -73,6 +73,11 @@ void* saveFileThread(void*);
 void autoSaveHandler();
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
+const char* menu_titles[] = {"File", "Build", "Option", "Help"};
+const char* file_menu[] = {"New", "Open", "Save", "Exit"};
+const char* build_menu[] = {"Run", "Link"};
+const char* option_menu[] = {"NUM", "SYN", "{ }"};
+
 const char* dataType[] = {"int", "unsigned", "signed", "double", "float",
 "char", "short", "long", "void"};
 const char* etc[] = {"sizeof", "typedef", "struct", "union", "enum", "extern", "static", "const"};
@@ -246,9 +251,7 @@ void backward(){
 
 //Ctrl + C 로 복사하는 기능
 void copy(){
-    pthread_mutex_lock(&mutex);
 	strcpy(copiedStr, buffer[i]);
-    pthread_mutex_unlock(&mutex);
 }
 
 //Ctrl + V 로 붙이는 기능
@@ -256,9 +259,8 @@ void paste() {
     pthread_mutex_lock(&mutex);
 
 	strcpy(buffer[i], copiedStr);
-	printScreen();
-
     pthread_mutex_unlock(&mutex);
+	printScreen();
 }
 
 //Ctrl + E 로 원하는 줄로 jump하는 기능
@@ -505,7 +507,6 @@ void input(){
             system("tmux resize-pane -L 5");
         else if(ch == 4)
             system("tmux resize-pane -R 5");
-        pthread_mutex_lock(&mutex);
         //<방향키로 커서 조작하는 부분>
         if(ch == KEY_LEFT){
 
@@ -629,7 +630,6 @@ void input(){
                 }
             }
         }
-        pthread_mutex_unlock(&mutex);
     }
 }
 
