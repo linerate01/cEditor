@@ -36,8 +36,6 @@ Ubuntu 기준:
 ```bash
 sudo apt-get install libncurses5-dev libncursesw5-dev
 
-```bash
 make
 
-```bash
 ./editor
