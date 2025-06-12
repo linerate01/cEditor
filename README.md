@@ -41,5 +41,3 @@ make
 
 ./editor
 
-![Uploading image.png…]()
-
