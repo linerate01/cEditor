@@ -28,6 +28,7 @@
 - `getch`, `wgetnstr` – 키보드 및 문자열 입력 처리
 
 ---
+![image](https://github.com/user-attachments/assets/e7611307-3b25-476c-aec4-929d26b873b3)
 
 ## 🧰 설치 방법
 
@@ -39,3 +40,6 @@ sudo apt-get install libncurses5-dev libncursesw5-dev
 make
 
 ./editor
+
+![Uploading image.png…]()
+
